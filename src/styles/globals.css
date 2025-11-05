@@ -1,0 +1,12 @@
+/* src/app/globals.css */
+@import "tailwindcss";
+
+/* Opzionale: tema/scoping */
+:root { color-scheme: dark; }
+
+/* Evita scroll “a sorpresa” su altezza piena */
+html, body {
+  height: 100%;
+}
+
+/* Puoi aggiungere qui eventuali reset o stili globali NON con @apply */
