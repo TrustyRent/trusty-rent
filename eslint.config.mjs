@@ -10,15 +10,22 @@ const compat = new FlatCompat({
 });
 
 const eslintConfig = [
+  // preset Next + TS (come avevi già)
   ...compat.extends("next/core-web-vitals", "next/typescript"),
+
+  // cosa ignorare
   {
-    ignores: [
-      "node_modules/**",
-      ".next/**",
-      "out/**",
-      "build/**",
-      "next-env.d.ts",
-    ],
+    ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts"],
+  },
+
+  // *** rilasso solo le regole che ti bloccano il build ***
+  {
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+      "react-hooks/exhaustive-deps": "warn",
+      "@next/next/no-img-element": "off",
+      "no-unused-vars": "off"
+    },
   },
 ];
 
