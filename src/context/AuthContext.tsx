@@ -60,24 +60,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   /**
    * Logout "forte":
-   * - prova a fare logout backend (non blocca in caso di errore)
-   * - esce da Supabase (scope: local)
-   * - rimuove eventuali token "sb-...-auth-token" dallo storage
-   * - pulisce token axios
-   * - resetta stato utente
+   * - prova a fare logout backend (best-effort)
+   * - esce da Supabase (scope locale)
+   * - pulisce storage locale di eventuali token Supabase
+   * - azzera token axios e stato
    * - redirect alla /login
    */
   async function logout() {
     try {
-      // backend (best-effort)
       await api.post("/auth/logout").catch(() => {});
 
-      // supabase: rimuove la sessione locale
       try {
         await supabase.auth.signOut({ scope: "local" });
       } catch {}
 
-      // pulizia storage locale di eventuali token Supabase
       try {
         Object.keys(localStorage).forEach((k) => {
           if (k.startsWith("sb-") && k.endsWith("-auth-token")) {
@@ -86,13 +82,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
         sessionStorage.clear();
       } catch {}
-
     } finally {
-      // reset client axios + stato
       setAccessToken(null);
       setUser(null);
-
-      // redirect
       if (typeof window !== "undefined") {
         window.location.href = "/login";
       }
