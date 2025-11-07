@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useEffect, useState } from "react";
 import api, { setAccessToken } from "@/lib/api";
-import { supabase } from "@/lib/supabase";
 
 type User = { id: string; email?: string } | null;
 
@@ -29,26 +28,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   async function refresh() {
     try {
       const r = await api.post("/auth/refresh");
-      const t = r.data?.access_token ?? null;
+      const t = r.data?.access_token ?? r.data?.accessToken ?? null;
       setAccessToken(t);
 
-      // opzionale: carico /auth/me se disponibile
+      // carica profilo se esiste l'endpoint
       try {
         const me = await api.get("/auth/me");
         setUser(me.data ?? null);
       } catch {
-        // se /auth/me non esiste/serve, ignoro
+        // se /auth/me non esiste, considera utente loggato ma senza dettagli
+        setUser((prev) => prev ?? { id: "me" });
       }
     } catch {
       setAccessToken(null);
       setUser(null);
-      throw new Error("refresh failed");
+      // non rilancio errori: lo stato scende a loading=false e la UI decide
     }
   }
 
   async function login(email: string, password: string) {
     const r = await api.post("/auth/login", { email, password });
-    const t = r.data?.access_token ?? null;
+    const t = r.data?.access_token ?? r.data?.accessToken ?? null;
     setAccessToken(t);
     try {
       const me = await api.get("/auth/me");
@@ -58,45 +58,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  /**
-   * Logout "forte":
-   * - prova a fare logout backend (best-effort)
-   * - esce da Supabase (scope locale)
-   * - pulisce storage locale di eventuali token Supabase
-   * - azzera token axios e stato
-   * - redirect alla /login
-   */
   async function logout() {
     try {
       await api.post("/auth/logout").catch(() => {});
-
-      try {
-        await supabase.auth.signOut({ scope: "local" });
-      } catch {}
-
-      try {
-        Object.keys(localStorage).forEach((k) => {
-          if (k.startsWith("sb-") && k.endsWith("-auth-token")) {
-            localStorage.removeItem(k);
-          }
-        });
-        sessionStorage.clear();
-      } catch {}
     } finally {
       setAccessToken(null);
       setUser(null);
-      if (typeof window !== "undefined") {
-        window.location.href = "/login";
-      }
+      if (typeof window !== "undefined") window.location.href = "/login";
     }
   }
 
   useEffect(() => {
     (async () => {
-      try {
-        await refresh();
-      } catch {}
-      setLoading(false);
+      await refresh();
+      setLoading(false); // SEMPRE scendi dal loading, anche se refresh fallisce
     })();
   }, []);
 

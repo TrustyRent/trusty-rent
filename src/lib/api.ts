@@ -16,7 +16,7 @@ function resolveApiBase() {
 }
 const API_URL = resolveApiBase();
 
-// ===== access token in memoria =====
+// ===== access token in memoria (opzionale) =====
 let ACCESS_TOKEN: string | null = null;
 export function setAccessToken(token: string | null) {
   ACCESS_TOKEN = token;
@@ -32,7 +32,7 @@ const api = axios.create({
   timeout: 15000,
 });
 
-// Authorization se ho l’access token
+// Authorization se ho l’access token (non obbligatorio: i cookie bastano)
 api.interceptors.request.use((config) => {
   if (ACCESS_TOKEN) {
     config.headers = config.headers ?? {};
@@ -41,15 +41,16 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// ===== auto-refresh su 401 =====
+// ===== auto-refresh su 401 con retry una sola volta =====
 let isRefreshing = false;
 let queue: { resolve: (v?: unknown) => void; reject: (e: unknown) => void; req: AxiosRequestConfig & { _retry?: boolean } }[] = [];
 
 async function runRefresh() {
-  const res = await api.post("/auth/refresh"); // il cookie HttpOnly fa tutto
+  // Il backend usa cookie HttpOnly: non serve leggere token, ma se arriva lo salviamo.
+  const res = await api.post("/auth/refresh");
   const newToken = (res.data?.access_token ?? res.data?.accessToken) as string | undefined;
   if (newToken) setAccessToken(newToken);
-  return newToken;
+  return true;
 }
 
 api.interceptors.response.use(
@@ -57,8 +58,8 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const status = error.response?.status;
     const original = (error.config || {}) as AxiosRequestConfig & { _retry?: boolean };
-
     if (status !== 401 || original._retry) throw error;
+
     original._retry = true;
 
     if (isRefreshing) {
@@ -80,7 +81,7 @@ api.interceptors.response.use(
       await Promise.allSettled(results);
       return retry;
     } catch (e) {
-      // refresh fallito: logout “soft”
+      // refresh fallito: svuota coda e “logout soft”
       queue.forEach(({ reject }) => reject(e));
       queue = [];
       setAccessToken(null);
