@@ -1,86 +1,45 @@
-// frontend/src/lib/api.ts
-import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
+// src/lib/api.ts
+import axios from "axios";
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000").replace(/\/+$/, "");
+/**
+ * Sorgente dell'URL API:
+ * 1) usa NEXT_PUBLIC_API_URL se presente (Vercel/Prod)
+ * 2) se siamo su vercel.app e l'env manca, fallback al backend Render
+ * 3) altrimenti in dev usa 127.0.0.1:8000
+ */
+function resolveApiBase() {
+  const env = (process.env.NEXT_PUBLIC_API_URL || "").trim().replace(/\/$/, "");
+  if (env) return env;
 
-let accessToken: string | null = null;
-let refreshInFlight: Promise<string | null> | null = null;
+  if (typeof window !== "undefined" && /\.vercel\.app$/.test(window.location.host)) {
+    return "https://affitti-backend.onrender.com";
+  }
 
-// Persistiamo l'access token per non perderlo al refresh della pagina
-export function setAccessToken(token: string | null) {
-  accessToken = token;
-  try {
-    if (token) localStorage.setItem("access_token", token);
-    else localStorage.removeItem("access_token");
-  } catch {}
+  return "http://127.0.0.1:8000";
 }
-export function getAccessToken(): string | null {
-  if (accessToken) return accessToken;
-  try {
-    accessToken = localStorage.getItem("access_token");
-  } catch {}
-  return accessToken;
+
+const API_URL = resolveApiBase();
+
+let ACCESS_TOKEN: string | null = null;
+export function setAccessToken(token: string | null) {
+  ACCESS_TOKEN = token;
+}
+export function getAccessToken() {
+  return ACCESS_TOKEN;
 }
 
 const api = axios.create({
-  baseURL: API_BASE,
-  withCredentials: true, // necessario per il cookie HttpOnly del refresh
-  timeout: 20000,
+  baseURL: API_URL,
+  withCredentials: true, // cookie HttpOnly
+  timeout: 15000,
 });
 
-// Attacca Authorization se abbiamo l'access token
-api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
-  const t = getAccessToken();
-  if (t && !config.headers?.Authorization) {
+api.interceptors.request.use((config) => {
+  if (ACCESS_TOKEN) {
     config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${t}`;
+    (config.headers as any).Authorization = `Bearer ${ACCESS_TOKEN}`;
   }
   return config;
 });
-
-// Esegui un solo refresh alla volta e condividi la promise
-async function refreshAccessToken(instance: AxiosInstance): Promise<string | null> {
-  if (!refreshInFlight) {
-    refreshInFlight = (async () => {
-      try {
-        const r = await instance.post("/auth/refresh"); // il backend legge il cookie
-        const t = r.data?.access_token ?? null;
-        if (t) setAccessToken(t);
-        return t;
-      } catch {
-        return null;
-      } finally {
-        setTimeout(() => (refreshInFlight = null), 0); // rilascia il lock
-      }
-    })();
-  }
-  return refreshInFlight;
-}
-
-// Se 401: tenta un (solo) refresh e poi un (solo) retry. Altrimenti logout.
-api.interceptors.response.use(
-  (res) => res,
-  async (error: AxiosError) => {
-    const original = (error.config || {}) as AxiosRequestConfig & { _retried?: boolean };
-    const status = error.response?.status;
-    const isRefresh = !!original.url && original.url.includes("/auth/refresh");
-
-    if (status !== 401 || isRefresh || original._retried) {
-      return Promise.reject(error);
-    }
-
-    const newToken = await refreshAccessToken(api);
-    if (!newToken) {
-      setAccessToken(null);
-      if (typeof window !== "undefined") window.location.href = "/login";
-      return Promise.reject(error);
-    }
-
-    original._retried = true;
-    original.headers = original.headers ?? {};
-    (original.headers as any).Authorization = `Bearer ${newToken}`;
-    return api.request(original);
-  }
-);
 
 export default api;
